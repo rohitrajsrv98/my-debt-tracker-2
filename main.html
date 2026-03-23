@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debt Tracker - Clean Template</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f1f5f9; }
+        .tab-active { border-bottom: 3px solid #2563eb; color: #2563eb; font-weight: 700; }
+        @media print { .no-print { display: none !important; } .print-only { display: block !important; } }
+        .print-only { display: none; }
+        /* Prevent layout shift on load */
+        [v-cloak] { display: none; }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <div class="max-w-4xl mx-auto">
+        <!-- Header -->
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+            <div>
+                <h1 class="text-3xl font-extrabold text-slate-900">Debt Repayment Tracker</h1>
+                <p class="text-slate-500 font-medium">Repayment Goal: April 2026 – March 2027</p>
+            </div>
+            <div class="flex gap-2 no-print">
+                <button onclick="addLender()" class="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold shadow-sm hover:bg-blue-700 transition">+ Add Lender</button>
+                <button onclick="window.print()" class="bg-slate-800 text-white px-4 py-2 rounded-lg font-bold shadow-sm hover:bg-slate-700 transition">Save for Samsung Notes</button>
+            </div>
+        </div>
+
+        <!-- Master Dashboard Stats -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <p class="text-xs uppercase font-bold text-slate-400 mb-1">Total Paid</p>
+                <h2 id="total-paid" class="text-2xl font-black text-green-600">₹0</h2>
+            </div>
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <p class="text-xs uppercase font-bold text-slate-400 mb-1">Current Balance</p>
+                <h2 id="total-remaining" class="text-2xl font-black text-orange-600">₹0</h2>
+            </div>
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <p class="text-xs uppercase font-bold text-slate-400 mb-1">Progress</p>
+                <h2 id="total-percent" class="text-2xl font-black text-blue-600">0%</h2>
+            </div>
+        </div>
+
+        <!-- Global Progress Bar -->
+        <div class="bg-white p-6 rounded-2xl shadow-sm mb-8">
+            <div class="flex justify-between items-end mb-2">
+                <span class="text-sm font-bold text-slate-700">Overall Repayment Progress</span>
+                <span id="progress-status" class="text-xs text-slate-500 uppercase font-bold">Waiting for data...</span>
+            </div>
+            <div class="w-full bg-slate-100 rounded-full h-4 overflow-hidden">
+                <div id="main-progress-bar" class="bg-blue-600 h-full transition-all duration-1000" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <!-- Tabs for Lenders -->
+        <div id="tab-container" class="flex border-b border-slate-200 mb-6 no-print overflow-x-auto whitespace-nowrap">
+            <!-- Tabs injected here -->
+        </div>
+
+        <!-- Lender Content -->
+        <div id="lender-content">
+            <!-- Content for active lender injected here -->
+        </div>
+
+        <!-- Reset Button -->
+        <div class="mt-12 text-center no-print">
+            <button onclick="resetAll()" class="text-xs text-slate-400 hover:text-red-500 transition underline">Clear All Data (Reset Template)</button>
+        </div>
+    </div>
+
+    <script>
+        const months = ["April 2026", "May 2026", "June 2026", "July 2026", "August 2026", "September 2026", "October 2026", "November 2026", "December 2026", "January 2027", "February 2027", "March 2027"];
+
+        // Start with an empty list so the user can fill their own values
+        let state = JSON.parse(localStorage.getItem('debtTrackerState_clean')) || {
+            activeTabId: 'summary',
+            lenders: []
+        };
+
+        function save() {
+            localStorage.setItem('debtTrackerState_clean', JSON.stringify(state));
+            render();
+        }
+
+        function resetAll() {
+            if (confirm("This will permanently delete all lenders and payments you have entered. Proceed?")) {
+                localStorage.removeItem('debtTrackerState_clean');
+                state = { activeTabId: 'summary', lenders: [] };
+                render();
+            }
+        }
+
+        function addLender() {
+            const name = prompt("Lender/Bank Name:");
+            if (!name) return;
+            const amount = parseFloat(prompt("Total Debt Amount (Numbers only, e.g., 500000):"));
+            if (isNaN(amount) || amount <= 0) {
+                alert("Please enter a valid numeric amount.");
+                return;
+            }
+            
+            const id = 'L' + Date.now();
+            state.lenders.push({ id, name, total: amount, payments: {} });
+            state.activeTabId = id;
+            save();
+        }
+
+        function deleteLender(id) {
+            if (confirm("Delete this lender? All payment history for this entry will be lost.")) {
+                state.lenders = state.lenders.filter(l => l.id !== id);
+                state.activeTabId = 'summary';
+                save();
+            }
+        }
+
+        function updatePayment(lenderId, month, value) {
+            const lender = state.lenders.find(l => l.id === lenderId);
+            if (lender) {
+                lender.payments[month] = parseFloat(value) || 0;
+                save();
+            }
+        }
+
+        function render() {
+            const tabContainer = document.getElementById('tab-container');
+            const content = document.getElementById('lender-content');
+            
+            // Render Tabs
+            tabContainer.innerHTML = `<button onclick="state.activeTabId='summary'; render();" class="px-6 py-2 text-sm ${state.activeTabId === 'summary' ? 'tab-active' : 'text-slate-500'}">Summary</button>`;
+            state.lenders.forEach(l => {
+                tabContainer.innerHTML += `<button onclick="state.activeTabId='${l.id}'; render();" class="px-6 py-2 text-sm ${state.activeTabId === l.id ? 'tab-active' : 'text-slate-500'}">${l.name}</button>`;
+            });
+
+            // Calculate Totals
+            let globalTotalDebt = state.lenders.reduce((acc, l) => acc + l.total, 0);
+            let globalTotalPaid = 0;
+            state.lenders.forEach(l => {
+                globalTotalPaid += Object.values(l.payments).reduce((acc, p) => acc + p, 0);
+            });
+
+            const remaining = globalTotalDebt - globalTotalPaid;
+            const percent = globalTotalDebt > 0 ? (globalTotalPaid / globalTotalDebt * 100).toFixed(1) : 0;
+
+            document.getElementById('total-paid').innerText = `₹${globalTotalPaid.toLocaleString()}`;
+            document.getElementById('total-remaining').innerText = `₹${remaining.toLocaleString()}`;
+            document.getElementById('total-percent').innerText = `${percent}%`;
+            document.getElementById('main-progress-bar').style.width = `${percent}%`;
+            document.getElementById('progress-status').innerText = globalTotalDebt > 0 ? `${percent}% Repaid` : 'Waiting for data...';
+
+            // Render Active View
+            if (state.activeTabId === 'summary') {
+                if (state.lenders.length === 0) {
+                    content.innerHTML = `
+                        <div class="bg-white rounded-2xl p-12 text-center border-2 border-dashed border-slate-200">
+                            <p class="text-slate-400 font-medium">No lenders added yet.</p>
+                            <button onclick="addLender()" class="mt-4 text-blue-600 font-bold hover:underline">+ Add your first lender to begin</button>
+                        </div>
+                    `;
+                    return;
+                }
+
+                let rows = state.lenders.map(l => {
+                    let paid = Object.values(l.payments).reduce((acc, p) => acc + p, 0);
+                    return `<tr class="border-b border-slate-50">
+                        <td class="p-4 font-bold text-slate-700">${l.name}</td>
+                        <td class="p-4 text-slate-500">₹${l.total.toLocaleString()}</td>
+                        <td class="p-4 text-green-600 font-bold">₹${paid.toLocaleString()}</td>
+                        <td class="p-4 text-orange-600 font-bold">₹${(l.total - paid).toLocaleString()}</td>
+                    </tr>`;
+                }).join('');
+
+                content.innerHTML = `
+                    <div class="bg-white rounded-2xl shadow-sm overflow-hidden">
+                        <table class="w-full text-left">
+                            <thead class="bg-slate-50">
+                                <tr>
+                                    <th class="p-4 text-xs font-bold uppercase text-slate-400">Lender</th>
+                                    <th class="p-4 text-xs font-bold uppercase text-slate-400">Principal</th>
+                                    <th class="p-4 text-xs font-bold uppercase text-slate-400">Paid</th>
+                                    <th class="p-4 text-xs font-bold uppercase text-slate-400">Balance</th>
+                                </tr>
+                            </thead>
+                            <tbody>${rows}</tbody>
+                        </table>
+                    </div>
+                `;
+            } else {
+                const lender = state.lenders.find(l => l.id === state.activeTabId);
+                if (!lender) { state.activeTabId = 'summary'; render(); return; }
+                
+                let currentBal = lender.total;
+                let targetPerMonth = (lender.total / 12).toFixed(0);
+
+                let rows = months.map(m => {
+                    let paid = lender.payments[m] || 0;
+                    currentBal -= paid;
+                    return `<tr class="border-b border-slate-50">
+                        <td class="p-4 font-medium text-slate-600">${m}</td>
+                        <td class="p-4 text-slate-400 text-xs italic">Goal: ₹${parseInt(targetPerMonth).toLocaleString()}</td>
+                        <td class="p-4">
+                            <input type="number" value="${paid || ''}" onchange="updatePayment('${lender.id}', '${m}', this.value)" placeholder="0" class="no-print w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+                            <span class="hidden print:inline font-bold">₹${paid.toLocaleString()}</span>
+                        </td>
+                        <td class="p-4 font-bold text-slate-800">₹${currentBal.toLocaleString()}</td>
+                    </tr>`;
+                }).join('');
+
+                content.innerHTML = `
+                    <div class="bg-white rounded-2xl shadow-sm overflow-hidden">
+                        <div class="p-6 border-b border-slate-100 flex justify-between items-center">
+                            <div>
+                                <h3 class="text-xl font-bold text-slate-800">${lender.name}</h3>
+                                <p class="text-sm text-slate-500">Starting Debt: ₹${lender.total.toLocaleString()}</p>
+                            </div>
+                            <button onclick="deleteLender('${lender.id}')" class="no-print text-red-500 text-xs font-bold hover:underline">Delete Lender</button>
+                        </div>
+                        <table class="w-full text-left">
+                            <thead class="bg-slate-50">
+                                <tr>
+                                    <th class="p-4 text-xs font-bold uppercase text-slate-400">Month</th>
+                                    <th class="p-4 text-xs font-bold uppercase text-slate-400">Monthly Target</th>
+                                    <th class="p-4 text-xs font-bold uppercase text-slate-400">Paid (₹)</th>
+                                    <th class="p-4 text-xs font-bold uppercase text-slate-400">Balance</th>
+                                </tr>
+                            </thead>
+                            <tbody>${rows}</tbody>
+                        </table>
+                    </div>
+                `;
+            }
+        }
+
+        window.onload = render;
+    </script>
+</body>
+</html>
