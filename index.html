@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Debt Tracker - Cloud Sync</title>
+    <title>Debt Tracker</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
@@ -33,19 +33,11 @@
             body { background: white; padding: 0; }
         }
 
+        /* Hide number input arrows */
         input::-webkit-outer-spin-button,
         input::-webkit-inner-spin-button {
             -webkit-appearance: none;
             margin: 0;
-        }
-
-        .sync-pulse {
-            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-        }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: .5; }
         }
     </style>
 </head>
@@ -60,7 +52,7 @@
                 </h1>
                 <div class="flex items-center gap-2 mt-1">
                     <p class="text-slate-500 font-medium">Personal Financial Journey</p>
-                    <span id="sync-status" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-400 uppercase tracking-widest">Connecting...</span>
+                    <span id="save-status" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 uppercase tracking-widest">Auto-Saving Enabled</span>
                 </div>
             </div>
             <div class="flex gap-3 no-print w-full md:w-auto">
@@ -114,166 +106,92 @@
         </footer>
     </div>
 
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // Global State
-        window.state = JSON.parse(localStorage.getItem('debt_tracker_flex_final')) || {
+    <script>
+        // Local State Storage
+        let state = JSON.parse(localStorage.getItem('debt_tracker_v5_local')) || {
             activeId: 'summary',
             lenders: []
         };
 
-        // Firebase Initialization
-        const firebaseConfig = JSON.parse(__firebase_config);
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'generic-debt-tracker';
-
-        let user = null;
-
-        async function initAuth() {
-            try {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
-            } catch (error) {
-                console.error("Auth failed:", error);
-                updateSyncStatus('Sync Offline', 'text-red-500');
-            }
-        }
-
-        function updateSyncStatus(text, colorClass) {
-            const statusEl = document.getElementById('sync-status');
-            statusEl.innerText = text;
-            statusEl.className = `text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 uppercase tracking-widest ${colorClass}`;
-        }
-
-        function setupSync(uid) {
-            updateSyncStatus('Syncing...', 'text-blue-500 sync-pulse');
-            const docRef = doc(db, 'artifacts', appId, 'users', uid, 'debtData', 'main');
-            
-            onSnapshot(docRef, (snapshot) => {
-                if (snapshot.exists()) {
-                    const cloudData = snapshot.data();
-                    if (window.state.lenders.length === 0 || cloudData.lastUpdated) {
-                        window.state.lenders = cloudData.lenders || [];
-                        render();
-                    }
-                    updateSyncStatus('Cloud Synced', 'text-emerald-500');
-                } else {
-                    updateSyncStatus('Local Mode', 'text-slate-400');
-                    if (window.state.lenders.length > 0) {
-                        saveToCloud();
-                    }
-                }
-            }, (error) => {
-                console.error("Firestore sync error:", error);
-                updateSyncStatus('Sync Error', 'text-red-400');
-            });
-        }
-
-        window.saveToCloud = async function() {
-            if (!auth.currentUser) return;
-            updateSyncStatus('Saving...', 'text-blue-500 sync-pulse');
-            const uid = auth.currentUser.uid;
-            const docRef = doc(db, 'artifacts', appId, 'users', uid, 'debtData', 'main');
-            
-            try {
-                await setDoc(docRef, {
-                    lenders: window.state.lenders,
-                    lastUpdated: new Date().toISOString()
-                });
-                updateSyncStatus('Saved', 'text-emerald-500');
-            } catch (error) {
-                console.error("Error saving to cloud:", error);
-                updateSyncStatus('Save Failed', 'text-red-400');
-            }
-        };
-
-        window.save = function() {
-            localStorage.setItem('debt_tracker_flex_final', JSON.stringify(window.state));
-            window.saveToCloud();
+        function save() {
+            localStorage.setItem('debt_tracker_v5_local', JSON.stringify(state));
             render();
-        };
+        }
 
-        window.addLender = function() {
+        function addLender() {
             const name = prompt("Lender Name (e.g., Bank, Friend):");
             if (!name) return;
             const amt = parseFloat(prompt("Total Principal Amount (INR):"));
             if (isNaN(amt) || amt <= 0) return;
             
             const id = 'L' + Date.now();
-            window.state.lenders.push({ id, name, total: amt, payments: [] });
-            window.state.activeId = id;
-            window.save();
-        };
+            state.lenders.push({ id, name, total: amt, payments: [] });
+            state.activeId = id;
+            save();
+        }
 
-        window.addPayment = function(lenderId) {
+        function addPayment(lenderId) {
             const date = prompt("Payment Month/Date:", new Date().toLocaleString('en-us', {month:'long', year:'numeric'}));
             if (!date) return;
             const amt = parseFloat(prompt("Amount Paid (INR):"));
             if (isNaN(amt)) return;
             
-            const lender = window.state.lenders.find(l => l.id === lenderId);
+            const lender = state.lenders.find(l => l.id === lenderId);
             if (lender) {
                 lender.payments.push({ id: 'P' + Date.now(), date, amount: amt });
-                window.save();
+                save();
             }
-        };
+        }
 
-        window.deletePayment = function(lenderId, paymentId) {
+        function deletePayment(lenderId, paymentId) {
             if (!confirm("Delete this entry?")) return;
-            const lender = window.state.lenders.find(l => l.id === lenderId);
+            const lender = state.lenders.find(l => l.id === lenderId);
             if (lender) {
                 lender.payments = lender.payments.filter(p => p.id !== paymentId);
-                window.save();
+                save();
             }
-        };
+        }
 
-        window.deleteLender = function(id) {
+        function deleteLender(id) {
             if (!confirm("Remove this lender and all their history?")) return;
-            window.state.lenders = window.state.lenders.filter(l => l.id !== id);
-            window.state.activeId = 'summary';
-            window.save();
-        };
+            state.lenders = state.lenders.filter(l => l.id !== id);
+            state.activeId = 'summary';
+            save();
+        }
 
-        window.exportData = function() {
-            const code = btoa(JSON.stringify(window.state));
+        function exportData() {
+            const code = btoa(JSON.stringify(state));
             const el = document.createElement('textarea');
             el.value = code; document.body.appendChild(el);
             el.select(); document.execCommand('copy'); document.body.removeChild(el);
-            alert("Backup Code Copied!");
-        };
+            alert("Backup Code Copied to Clipboard! Paste it into your Samsung Notes.");
+        }
 
-        window.importData = function() {
+        function importData() {
             const code = prompt("Paste your Backup Code here:");
             if (code) {
                 try { 
-                    window.state = JSON.parse(atob(code)); 
-                    window.save(); 
-                } catch(e) { alert("Invalid backup code."); }
+                    state = JSON.parse(atob(code)); 
+                    save(); 
+                } catch(e) { alert("Invalid backup code format."); }
             }
-        };
+        }
 
-        window.resetAll = function() {
-            if (confirm("DANGER: Wipe all your records?")) {
-                window.state = { activeId: 'summary', lenders: [] };
-                window.save();
+        function resetAll() {
+            if (confirm("DANGER: This will delete everything. Proceed?")) {
+                state = { activeId: 'summary', lenders: [] };
+                save();
             }
-        };
+        }
 
-        window.render = function() {
+        function render() {
             const tabs = document.getElementById('tab-container');
             const content = document.getElementById('main-content');
             
-            let totalDebt = window.state.lenders.reduce((a, b) => a + b.total, 0);
+            // Header Stats
+            let totalDebt = state.lenders.reduce((a, b) => a + b.total, 0);
             let totalPaid = 0;
-            window.state.lenders.forEach(l => {
+            state.lenders.forEach(l => {
                 totalPaid += l.payments.reduce((sum, p) => sum + p.amount, 0);
             });
             const remaining = totalDebt - totalPaid;
@@ -284,50 +202,120 @@
             document.getElementById('stat-perc').innerText = percent + '%';
             document.getElementById('prog-bar').style.width = percent + '%';
 
+            // Navigation Tabs
             tabs.innerHTML = `
-                <button onclick="window.state.activeId='summary';render()" class="px-6 py-2.5 rounded-2xl text-sm font-bold transition-all ${window.state.activeId === 'summary' ? 'tab-active' : 'text-slate-400 hover:text-slate-600'}">
+                <button onclick="state.activeId='summary';render()" class="px-6 py-2.5 rounded-2xl text-sm font-bold transition-all ${state.activeId === 'summary' ? 'tab-active' : 'text-slate-400 hover:text-slate-600'}">
                     Dashboard
                 </button>
             `;
-            window.state.lenders.forEach(l => {
+            state.lenders.forEach(l => {
                 tabs.innerHTML += `
-                    <button onclick="window.state.activeId='${l.id}';render()" class="px-6 py-2.5 rounded-2xl text-sm font-bold transition-all whitespace-nowrap ${window.state.activeId === l.id ? 'tab-active' : 'text-slate-400 hover:text-slate-600'}">
+                    <button onclick="state.activeId='${l.id}';render()" class="px-6 py-2.5 rounded-2xl text-sm font-bold transition-all whitespace-nowrap ${state.activeId === l.id ? 'tab-active' : 'text-slate-400 hover:text-slate-600'}">
                         ${l.name}
                     </button>
                 `;
             });
 
-            if (window.state.activeId === 'summary') {
-                if (window.state.lenders.length === 0) {
-                    content.innerHTML = `<div class="glass-card p-16 text-center text-slate-400 border-2 border-dashed bg-white/50"><p class="font-bold">No data yet.</p></div>`;
+            // Tab Content
+            if (state.activeId === 'summary') {
+                if (state.lenders.length === 0) {
+                    content.innerHTML = `
+                        <div class="glass-card p-16 text-center text-slate-400 border-2 border-dashed bg-white/50">
+                            <p class="font-bold text-lg mb-2">No lenders found.</p>
+                            <p class="text-sm">Click "+ New Lender" at the top to begin.</p>
+                        </div>
+                    `;
                 } else {
-                    let rows = window.state.lenders.map(l => {
+                    let rows = state.lenders.map(l => {
                         const paid = l.payments.reduce((sum, p) => sum + p.amount, 0);
-                        return `<tr class="border-b border-slate-100 last:border-0"><td class="p-6 font-bold text-slate-800">${l.name}</td><td class="p-6 text-slate-400 font-medium">₹${l.total.toLocaleString('en-IN')}</td><td class="p-6 text-emerald-600 font-black">₹${paid.toLocaleString('en-IN')}</td><td class="p-6 text-orange-500 font-black text-right">₹${(l.total - paid).toLocaleString('en-IN')}</td></tr>`;
+                        return `
+                            <tr class="border-b border-slate-100 last:border-0">
+                                <td class="p-6 font-bold text-slate-800">${l.name}</td>
+                                <td class="p-6 text-slate-400 font-medium">₹${l.total.toLocaleString('en-IN')}</td>
+                                <td class="p-6 text-emerald-600 font-black">₹${paid.toLocaleString('en-IN')}</td>
+                                <td class="p-6 text-orange-500 font-black text-right">₹${(l.total - paid).toLocaleString('en-IN')}</td>
+                            </tr>
+                        `;
                     }).join('');
-                    content.innerHTML = `<div class="glass-card overflow-hidden"><table class="w-full text-left"><thead class="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-400"><tr><th class="p-6">Lender</th><th class="p-6">Principal</th><th class="p-6">Paid</th><th class="p-6 text-right">Balance</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+                    content.innerHTML = `
+                        <div class="glass-card overflow-hidden">
+                            <table class="w-full text-left">
+                                <thead class="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                    <tr>
+                                        <th class="p-6">Lender Name</th>
+                                        <th class="p-6">Initial Principal</th>
+                                        <th class="p-6">Total Paid</th>
+                                        <th class="p-6 text-right">Current Balance</th>
+                                    </tr>
+                                </thead>
+                                <tbody>${rows}</tbody>
+                            </table>
+                        </div>
+                    `;
                 }
             } else {
-                const lender = window.state.lenders.find(l => l.id === window.state.activeId);
+                const lender = state.lenders.find(l => l.id === state.activeId);
                 const lenderPaid = lender.payments.reduce((sum, p) => sum + p.amount, 0);
+                
                 let currentRunningBal = lender.total;
                 let rows = lender.payments.map(p => {
                     currentRunningBal -= p.amount;
-                    return `<tr class="border-b border-slate-100 last:border-0"><td class="p-6 font-bold text-slate-700">${p.date}</td><td class="p-6 text-emerald-600 font-black text-lg">₹${p.amount.toLocaleString('en-IN')}</td><td class="p-6 text-orange-600 font-black text-lg">₹${currentRunningBal.toLocaleString('en-IN')}</td><td class="p-6 text-right no-print"><button onclick="deletePayment('${lender.id}', '${p.id}')" class="text-[10px] font-black text-red-300 hover:text-red-500 uppercase tracking-widest bg-red-50 px-3 py-1.5 rounded-lg">Delete</button></td></tr>`;
+                    return `
+                        <tr class="border-b border-slate-100 last:border-0">
+                            <td class="p-6 font-bold text-slate-700">${p.date}</td>
+                            <td class="p-6 text-emerald-600 font-black text-lg">₹${p.amount.toLocaleString('en-IN')}</td>
+                            <td class="p-6 text-orange-600 font-black text-lg">₹${currentRunningBal.toLocaleString('en-IN')}</td>
+                            <td class="p-6 text-right no-print">
+                                <button onclick="deletePayment('${lender.id}', '${p.id}')" class="text-[10px] font-black text-red-300 hover:text-red-500 uppercase tracking-widest bg-red-50 px-3 py-1.5 rounded-lg">Delete</button>
+                            </td>
+                        </tr>
+                    `;
                 }).join('');
-                content.innerHTML = `<div class="glass-card overflow-hidden"><div class="p-8 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center bg-white/50 gap-6"><div><h3 class="text-3xl font-black text-slate-900">${lender.name}</h3><div class="flex gap-6 mt-2"><div class="flex flex-col"><span class="text-[10px] uppercase font-black text-slate-400 tracking-widest">Initial</span><span class="font-bold text-slate-600 text-sm">₹${lender.total.toLocaleString('en-IN')}</span></div><div class="flex flex-col"><span class="text-[10px] uppercase font-black text-orange-400 tracking-widest">Balance</span><span class="font-bold text-orange-600 text-sm">₹${(lender.total - lenderPaid).toLocaleString('en-IN')}</span></div></div></div><div class="flex gap-3 no-print w-full md:w-auto"><button onclick="addPayment('${lender.id}')" class="flex-1 md:flex-none bg-emerald-600 text-white px-6 py-3 rounded-2xl text-xs font-bold shadow-lg shadow-emerald-100 hover:bg-emerald-700 transition">+ Add Payment</button><button onclick="deleteLender('${lender.id}')" class="bg-red-50 text-red-400 px-6 py-3 rounded-2xl text-xs font-bold hover:bg-red-100 transition">Remove</button></div></div><table class="w-full text-left"><thead class="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-400"><tr><th class="p-6">Date</th><th class="p-6">Paid</th><th class="p-6">Remaining</th><th class="p-6 text-right no-print">Action</th></tr></thead><tbody>${rows || '<tr><td colspan="4" class="p-16 text-center text-slate-300 italic font-medium">No history.</td></tr>'}</tbody></table></div>`;
-            }
-        };
 
-        onAuthStateChanged(auth, (u) => {
-            if (u) {
-                user = u;
-                setupSync(u.uid);
-            } else {
-                initAuth();
+                content.innerHTML = `
+                    <div class="glass-card overflow-hidden">
+                        <div class="p-8 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center bg-white/50 gap-6">
+                            <div>
+                                <h3 class="text-3xl font-black text-slate-900">${lender.name}</h3>
+                                <div class="flex gap-6 mt-2">
+                                    <div class="flex flex-col">
+                                        <span class="text-[10px] uppercase font-black text-slate-400 tracking-widest">Initial</span>
+                                        <span class="font-bold text-slate-600 text-sm">₹${lender.total.toLocaleString('en-IN')}</span>
+                                    </div>
+                                    <div class="flex flex-col">
+                                        <span class="text-[10px] uppercase font-black text-orange-400 tracking-widest">Remaining Balance</span>
+                                        <span class="font-bold text-orange-600 text-sm">₹${(lender.total - lenderPaid).toLocaleString('en-IN')}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="flex gap-3 no-print w-full md:w-auto">
+                                <button onclick="addPayment('${lender.id}')" class="flex-1 md:flex-none bg-emerald-600 text-white px-6 py-3 rounded-2xl text-xs font-bold shadow-lg shadow-emerald-100 hover:bg-emerald-700 transition active:scale-95">
+                                    + Add Payment Log
+                                </button>
+                                <button onclick="deleteLender('${lender.id}')" class="bg-red-50 text-red-400 px-6 py-3 rounded-2xl text-xs font-bold hover:bg-red-100 transition">
+                                    Remove
+                                </button>
+                            </div>
+                        </div>
+                        <table class="w-full text-left">
+                            <thead class="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                <tr>
+                                    <th class="p-6">Date / Note</th>
+                                    <th class="p-6">Amount Paid</th>
+                                    <th class="p-6">Remaining Balance</th>
+                                    <th class="p-6 text-right no-print">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${rows || '<tr><td colspan="4" class="p-16 text-center text-slate-300 italic font-medium">No history logged yet.</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
             }
-        });
+        }
 
+        // Run render on load
         render();
     </script>
 </body>
